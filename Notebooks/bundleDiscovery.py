@@ -9,6 +9,10 @@ from zipfile import ZipFile
 import urllib.request
 import datetime
 import os
+from subprocess import Popen, PIPE, STDOUT
+import pandas
+import numpy
+from IPython.display import display, HTML
 
 def readDataAndGenerateCSV(scenario):
 	if scenario == 1 or scenario == 2:
@@ -391,3 +395,67 @@ def plotSelectedBundle2(scenario, bundle_to_visualize, symbol, year, stocks):
 	plt.plot(list(range(x1, x2)), minimum, color='#539ecd', linewidth=5.0)
 	plt.grid(True)
 	plt.fill_between(list(range(x1, x2)), minimum, maximum, color='#539ecd', alpha=0.25)
+
+def getSimilarBundles(sort_by):
+	pandas.set_option('display.max_colwidth', -1)
+
+	p = Popen(['java', '-jar', 'simjoin-0.0.1-SNAPSHOT-jar-with-dependencies.jar', 'ssjoin_config.properties'], stdout=PIPE, stderr=STDOUT)
+
+	f = open('ssjoin_out.txt', "r")
+	lines_ssjoin = f.readlines()
+	f.close()
+
+	f = open('results.txt', "r")
+	lines_bundles = f.readlines()
+	f.close()
+
+	first_time = True
+	for line in lines_ssjoin:
+	    res_list = []
+	    bundle1 = lines_bundles[int(line.split(",")[0])]
+	    bundle1_name = bundle1.split(";")[0]
+	    bundle1_members = bundle1.split(";")[1]
+	    bundle1_interval_start = int(bundle1.split(";")[2].split("-")[0][1:])
+	    bundle1_interval_end = int(bundle1.split(";")[2].split("-")[1][:-2])
+	    
+	    bundle2 = lines_bundles[int(line.split(",")[1])]
+	    bundle2_name = bundle2.split(";")[0]
+	    bundle2_members = bundle2.split(";")[1]
+	    bundle2_interval_start = int(bundle2.split(";")[2].split("-")[0][1:])
+	    bundle2_interval_end = int(bundle2.split(";")[2].split("-")[1][:-2])
+	    
+	    res_list.append(bundle1_name + " " + bundle2_name)
+	    
+	    similarity = float(line.split(",")[2].split("\n")[0][:-1])
+	    res_list.append(similarity)
+
+	    x = range(bundle1_interval_start, bundle1_interval_end+1)
+	    x_len = bundle1_interval_end-bundle1_interval_start
+	    y = range(bundle2_interval_start, bundle2_interval_end+1)
+	    y_len = bundle2_interval_end-bundle2_interval_start
+	    xs = set(x)
+	    intersect_length = len(xs.intersection(y))
+	    interval_similarity = 0
+	    if x_len > y_len:
+	        interval_similarity = intersect_length/x_len
+	    else:
+	        interval_similarity = intersect_length/y_len  
+	    res_list.append(interval_similarity)
+	    
+	    bundle1_set = set(''.join(bundle1_members).split(","))
+	    bundle2_set = set(''.join(bundle2_members).split(","))
+	    
+	    common = bundle1_set.intersection(bundle2_set)
+	    res_list.append(common)
+	    not_common = bundle1_set.symmetric_difference(bundle2_set)
+	    res_list.append(not_common)
+
+	    if first_time == True:
+	        newArray = numpy.array(res_list)
+	        first_time = False
+	    else:
+	        newArray = numpy.vstack([newArray, res_list])
+	    
+	field_list = ["Bundle Pair", "Member Similarity", "Interval Similarity", "Common Members", "Non-Common Members"]
+	members_incr = range(1, len(newArray)+1)
+	display(pandas.DataFrame(newArray, members_incr, field_list).sort_values(sort_by, ascending=False))
